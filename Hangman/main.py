@@ -187,7 +187,10 @@ def check_game_end(state: GameState) -> None:
     :param state: Текущее состояние игры.
     """
     if state["error_count"] >= state["max_errors"]:
-        print(f"Вы потратили все попытки и проиграли!\n{draw_hangman(state['error_count'])}")
+        print(
+            f"Вы потратили все попытки и проиграли!\nБыло загадано слово: {state['word']}\n"
+            f"{draw_hangman(state['error_count'])}"
+        )
     else:
         print(f"Поздравляем, вы верно отгадали слово {state['word']}\n{win_pics}")
     print_separator()
