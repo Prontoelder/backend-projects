@@ -1,10 +1,12 @@
 import sys
+from collections import Counter
 from random import choice, sample
 from typing import TypedDict
 
 from display import draw_hangman, print_separator, win_pics
 
 EASY_MODE_LETTERS: int = 2
+WORDS: list[str] = []
 
 
 class GameState(TypedDict):
@@ -17,37 +19,68 @@ class GameState(TypedDict):
 
 
 def main() -> None:
-    """Запускает главное меню игры и обрабатывает выбор игрока."""
-    actions: dict[int, tuple[str, str]] = {
+    """Главный цикл приложения, его задача — управлять игрой и обрабатывать исключения."""
+
+    try:
+        load_words()
+    except FileNotFoundError:
+        print("Ошибка: файл со словами 'words.txt' не найден. Программа завершается.")
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Ошибка в файле со словами: {e}. Программа завершается.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Непредвиденная ошибка при загрузке слов: {e}")
+        sys.exit(1)
+
+    try:
+        while True:
+            game_mode = show_menu()
+
+            if game_mode == "exit":
+                print("Возвращайтесь скорее, игре без вас будет скучно!")
+                break
+
+            try:
+                start_game(game_mode=game_mode)
+            except RuntimeError as e:
+                print(f"Произошла ошибка во время игры: {e}")
+                print("Возвращаемся в главное меню...")
+
+    except KeyboardInterrupt:
+        print("\nИгра прервана пользователем. До встречи!")
+        sys.exit(0)
+
+
+def show_menu() -> str:
+    """
+    Отображает главное меню игры и обрабатывает выбор пользователя.
+
+    Предлагает пользователю выбрать между лёгким режимом, нормальным режимом или выходом.
+    Повторяет запрос, пока не будет получен корректный ввод.
+
+    :return: Режим игры ('easy', 'normal' или 'exit'), выбранный пользователем.
+    """
+    actions = {
         1: ("Да, в легком режиме (изначально известны 2 буквы)", "easy"),
         2: ("Да, в нормальном режиме (все буквы неизвестны)", "normal"),
         3: ("Нет", "exit"),
     }
+    menu_text = "\n".join(f"[{num}] {desc}" for num, (desc, _) in actions.items())
+    valid_choices = set(actions.keys())
 
-    try:
-        while True:
-            print('Добро пожаловать в игру "Виселица"!\nХотите начать новую игру?\n')
-
-            menu: str = "\n".join(f"[{num}] {desc}" for num, (desc, _) in actions.items())
-            valid_choices: str = ", ".join(str(num) for num in actions.keys())
-
-            try:
-                player_choice: int = int(input(f"{menu}\nВведите цифру: "))
-                if player_choice in actions:
-                    _, mode = actions[player_choice]
-                    if mode == "exit":
-                        print("Возвращайтесь скорее, игре без вас будет скучно!")
-                        break
-                    start_game(game_mode=mode)
-                else:
-                    print_separator()
-                    print(f"Пожалуйста, введите один из вариантов: {valid_choices}")
-            except ValueError:
-                print_separator()
-                print(f"Ошибка: введите цифру из предложенных вариантов: {valid_choices}!")
-    except KeyboardInterrupt:
-        print("\nИгра прервана пользователем. До встречи!")
-        sys.exit(0)
+    while True:
+        print('Добро пожаловать в игру "Виселица"!\nХотите начать новую игру?\n')
+        print(menu_text)
+        choice_str = input("Введите цифру: ")
+        try:
+            user_choice = int(choice_str)  # переименовали переменную
+            if user_choice in valid_choices:
+                return actions[user_choice][1]  # возвращаем режим
+            else:
+                print(f"Пожалуйста, введите один из вариантов: {', '.join(map(str, valid_choices))}")
+        except ValueError:
+            print(f"Ошибка: введите цифру из предложенных вариантов: {', '.join(map(str, valid_choices))}!")
 
 
 def start_game(game_mode: str = "normal") -> None:
@@ -69,10 +102,6 @@ def initialize_game(game_mode: str = "normal") -> GameState:
     максимальное количество ошибок и режим игры.
     """
     word = get_random_word()
-    if word is None:
-        print("Не удалось загрузить слово для игры. Игра завершена.")
-        sys.exit(1)
-
     word = word.upper()
     mask: list[str] = create_word_mask(word)
 
@@ -158,16 +187,12 @@ def select_letters_for_easy(word: str) -> list[str]:
     :param word: Загаданное слово.
     :return: Список букв, которые будут раскрыты.
     """
-    letter_counts: dict[str, int] = get_letter_counts(word)
-    double_occurrence_letters: list[str] = [char for char, count in letter_counts.items() if count == EASY_MODE_LETTERS]
+    letter_counts: dict[str, int] = Counter(word)
     single_occurrence_letters: list[str] = [char for char, count in letter_counts.items() if count == 1]
 
     if len(single_occurrence_letters) >= EASY_MODE_LETTERS:
         return sample(single_occurrence_letters, EASY_MODE_LETTERS)
-    elif double_occurrence_letters:
-        return [choice(double_occurrence_letters)]
-    else:
-        return []
+    return []
 
 
 def is_valid_russian_letter(char: str) -> bool:
@@ -224,25 +249,26 @@ def reveal_letter(state: GameState, letter: str) -> None:
             state["mask"][i] = letter
 
 
-def get_random_word() -> str | None:
+def load_words() -> None:
+    """
+    Загружает список слов из файла в глобальную переменную WORDS.
+    """
+    global WORDS
+    with open("words.txt", encoding="utf-8") as file:
+        WORDS = file.read().splitlines()
+        if not WORDS:
+            raise ValueError("Файл слов пустой.")
+
+
+def get_random_word() -> str:
     """
     Выбирает случайное слово из файла для игры.
 
-    :return: Случайное слово или None, если не удалось загрузить слово.
+    :return: Случайное слово.
     """
-    try:
-        with open("words.txt", encoding="utf-8") as file:
-            words: list[str] = file.read().splitlines()
-            if not words:
-                print("Файл пустой.")
-                return None
-            return choice(words)
-    except FileNotFoundError:
-        print("Файл не найден.")
-        return None
-    except Exception as e:
-        print(f"Ошибка при чтении файла: {e}.")
-        return None
+    if not WORDS:
+        raise RuntimeError("Список слов пуст.")
+    return choice(WORDS)
 
 
 def create_word_mask(word: str) -> list[str]:
@@ -255,21 +281,5 @@ def create_word_mask(word: str) -> list[str]:
     return ["_" for _ in word]
 
 
-def get_letter_counts(word: str) -> dict[str, int]:
-    """
-    Подсчитывает количество вхождений каждой буквы в слове.
-
-    :param word: Слово, для которого нужно подсчитать буквы.
-    :return: Словарь, где ключи - буквы, а значения - их количество в слове.
-    """
-    counts: dict[str, int] = {}
-    for char in word:
-        counts[char] = counts.get(char, 0) + 1
-    return counts
-
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nИгра прервана пользователем. До встречи!")
-        sys.exit(0)
+    main()
